@@ -76,11 +76,15 @@ export const openUserLogin = (showTip: boolean = false) => {
   });
 };
 
-// 跳转到歌手
-export const openJumpArtist = (data: SongType["artists"]) => {
+/**
+ * 跳转到歌手
+ * @param data 歌手信息
+ * @param id 歌手 id
+ * @returns
+ */
+export const openJumpArtist = (data: SongType["artists"], id?: number) => {
   // 若 data 为数组且只有一个元素，则直接跳转
-  if (isArray(data) && data.length === 1) {
-    const id = data[0].id;
+  if (isArray(data) && data.length <= 2 && id) {
     router.push({ name: "artist", query: { id } });
     return;
   }
@@ -121,7 +125,7 @@ export const openPlaylistAdd = (data: SongType[], isLocal: boolean) => {
     transformOrigin: "center",
     autoFocus: false,
     style: { width: "600px" },
-    title: "添加到歌单",
+    title: isLocal ? "添加到本地歌单" : "添加到歌单",
     content: () => {
       return h(PlaylistAdd, { data, isLocal, onClose: () => modal.destroy() });
     },
@@ -162,15 +166,15 @@ export const openCloudMatch = (id: number, index: number) => {
 };
 
 // 新建歌单
-export const openCreatePlaylist = () => {
+export const openCreatePlaylist = (isLocal: boolean = false) => {
   const modal = window.$modal.create({
     preset: "card",
     transformOrigin: "center",
     autoFocus: false,
     style: { width: "600px" },
-    title: "新建歌单",
+    title: isLocal ? "新建本地歌单" : "新建歌单",
     content: () => {
-      return h(CreatePlaylist, { onClose: () => modal.destroy() });
+      return h(CreatePlaylist, { isLocal, onClose: () => modal.destroy() });
     },
   });
 };

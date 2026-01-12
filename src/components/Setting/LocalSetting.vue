@@ -12,6 +12,20 @@
       </n-card>
       <n-card class="set-item">
         <div class="label">
+          <n-text class="name">本地文件夹显示模式</n-text>
+          <n-text class="tip" :depth="3">选择本地音乐页面文件夹的显示方式</n-text>
+        </div>
+        <n-select
+          class="set"
+          v-model:value="settingStore.localFolderDisplayMode"
+          :options="[
+            { label: '标签页模式', value: 'tab' },
+            { label: '下拉筛选模式', value: 'dropdown' },
+          ]"
+        />
+      </n-card>
+      <n-card class="set-item">
+        <div class="label">
           <n-text class="name">显示本地默认歌曲目录</n-text>
         </div>
         <n-switch class="set" v-model:value="settingStore.showDefaultLocalPath" :round="false" />
@@ -94,6 +108,13 @@
         <n-switch class="set" v-model:value="settingStore.cacheEnabled" :round="false" />
       </n-card>
       <n-collapse-transition :show="settingStore.cacheEnabled">
+        <n-card class="set-item">
+          <div class="label">
+            <n-text class="name">缓存歌曲</n-text>
+            <n-text class="tip" :depth="3">是否缓存歌曲音频，关闭后可节省缓存空间</n-text>
+          </div>
+          <n-switch class="set" v-model:value="settingStore.songCacheEnabled" :round="false" />
+        </n-card>
         <n-card class="set-item">
           <div class="label">
             <n-text class="name">缓存大小上限</n-text>
@@ -414,7 +435,7 @@ const loadCacheSize = async () => {
 
 // 清空所有缓存目录
 const clearCache = async () => {
-  const types: CacheResourceType[] = ["music", "lyrics", "local-data", "playlist-data"];
+  const types: CacheResourceType[] = ["music", "lyrics", "local-data", "list-data"];
   let hasError = false;
   for (const type of types) {
     const res = await cacheManager.clear(type);

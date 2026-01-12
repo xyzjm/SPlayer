@@ -6,7 +6,7 @@
         block-line
         expand-on-click
         virtual-scroll
-        :data="treeData"
+        :data="displayTreeData"
         :selected-keys="[chooseFolder]"
         :expanded-keys="expandedKeys"
         :render-prefix="renderPrefix"
@@ -55,7 +55,7 @@ const folderData = computed<Record<string, SongType[]>>(() => {
   const map: Record<string, SongType[]> = {};
 
   props.data.forEach((song) => {
-    const fullPath = (song as any).path as string | undefined;
+    const fullPath = song.path;
     if (!fullPath) return;
 
     // 去掉文件名，提取目录路径
@@ -195,6 +195,10 @@ const treeData = computed<TreeOption[]>(() => {
   return finalTree;
 });
 
+// 防止后台更新导致的 DOM 报错
+const displayTreeData = ref<TreeOption[]>([]);
+const isActive = ref(true);
+
 // 当前选中文件夹的歌曲（包含子目录）
 const folderSongs = computed<SongType[]>(() => {
   if (!chooseFolder.value) return [];
@@ -259,6 +263,25 @@ watch(
   },
   { immediate: true },
 );
+
+watch(
+  treeData,
+  (val) => {
+    if (isActive.value) {
+      displayTreeData.value = val;
+    }
+  },
+  { immediate: true },
+);
+
+onActivated(() => {
+  isActive.value = true;
+  displayTreeData.value = treeData.value;
+});
+
+onDeactivated(() => {
+  isActive.value = false;
+});
 </script>
 
 <style lang="scss" scoped>

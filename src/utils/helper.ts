@@ -299,35 +299,54 @@ const changeLocalPath =
         settingStore[settingsKey].splice(delIndex, 1);
         return;
       }
-      // 添加目录
-      const selectedDir = await window.electron.ipcRenderer.invoke("choose-path", title);
-      if (!selectedDir) return;
-      // 所有需要检查的路径
-      const allPath = [...settingStore[settingsKey]];
-      // 是否是完全相同的路径
-      const isExactMatch = await window.electron.ipcRenderer.invoke(
-        "check-if-same-path",
-        allPath,
-        selectedDir,
-      );
-      if (isExactMatch) {
-        window.$message.error("添加的目录已存在");
-        return;
-      }
-      // 检查是否为子文件夹关系
-      if (includeSubFolders) {
-        const isSubfolder = await window.electron.ipcRenderer.invoke(
-          "check-if-subfolder",
-          allPath,
+      // 添加目录（支持多选）
+      const selectedDirs = await window.electron.ipcRenderer.invoke("choose-path", title, true);
+      if (!selectedDirs || selectedDirs.length === 0) return;
+      // 转换为数组（兼容单选返回字符串的情况）
+      const dirsToAdd = Array.isArray(selectedDirs) ? selectedDirs : [selectedDirs];
+      // 记录成功添加的数量
+      let addedCount = 0;
+      let skippedCount = 0;
+      // 用于追踪本次批量添加中已添加的路径
+      const newlyAddedPaths: string[] = [];
+      for (const selectedDir of dirsToAdd) {
+        // 检查时需要包含原有路径和本次已添加的路径
+        const pathsToCheck = [...settingStore[settingsKey], ...newlyAddedPaths];
+        // 是否是完全相同的路径
+        const isExactMatch = await window.electron.ipcRenderer.invoke(
+          "check-if-same-path",
+          pathsToCheck,
           selectedDir,
         );
-        if (isSubfolder) {
-          window.$message.error("添加的目录与现有目录有重叠，请重新选择");
-          return;
+        if (isExactMatch) {
+          skippedCount++;
+          continue;
         }
+        // 检查是否为子文件夹关系
+        if (includeSubFolders) {
+          const isSubfolder = await window.electron.ipcRenderer.invoke(
+            "check-if-subfolder",
+            pathsToCheck,
+            selectedDir,
+          );
+          if (isSubfolder) {
+            skippedCount++;
+            continue;
+          }
+        }
+        // 通过所有检查，添加目录
+        settingStore[settingsKey].push(selectedDir);
+        newlyAddedPaths.push(selectedDir);
+        addedCount++;
       }
-      // 通过所有检查，添加目录
-      settingStore[settingsKey].push(selectedDir);
+      // 显示结果提示
+      if (addedCount > 0 && skippedCount > 0) {
+        window.$message.success(`成功添加 ${addedCount} 个目录，跳过 ${skippedCount} 个重复目录`);
+      } else if (addedCount > 0) {
+        window.$message.success(`成功添加 ${addedCount} 个目录`);
+      } else if (skippedCount > 0) {
+        window.$message.warning(`所选目录已存在或有重叠，已跳过`);
+      }
     } catch (error) {
       console.error(`${errorConsole}: `, error);
       window.$message.error(errorMessage);
@@ -387,19 +406,34 @@ export const handleSongQuality = (
     if (song >= 160000) return QualityType.MQ;
     return QualityType.LQ;
   }
-  // 含有 level 特殊处理
-  if (typeof song === "object" && "level" in song) {
-    if (song.level === "jymaster") return QualityType.Master;
-    if (song.level === "dolby") return QualityType.Dolby;
-    if (song.level === "sky") return QualityType.Spatial;
-    if (song.level === "jyeffect") return QualityType.Surround;
-    if (song.level === "hires") return QualityType.HiRes;
-    if (song.level === "lossless") return QualityType.SQ;
-    if (song.level === "exhigh") return QualityType.HQ;
-    if (song.level === "higher") return QualityType.MQ;
-    if (song.level === "standard") return QualityType.LQ;
-    return undefined;
+
+  const levelQualityMap = {
+    "jymaster": QualityType.Master,
+    "dolby": QualityType.Dolby,
+    "sky": QualityType.Spatial,
+    "jyeffect": QualityType.Surround,
+    "hires": QualityType.HiRes,
+    "lossless": QualityType.SQ,
+    "exhigh": QualityType.HQ,
+    "higher": QualityType.MQ,
+    "standard": QualityType.LQ,
   }
+
+  if (typeof song === "object" && song) {
+    // 含有 level 特殊处理
+    if ("level" in song) {
+      const quality = levelQualityMap[song.level];
+      if (quality) return quality;
+    }
+    // 云盘歌曲适配
+    if ("privilege" in song) {
+      const privilege = song.privilege;
+      const quality = levelQualityMap[privilege?.playMaxBrLevel]
+        ?? levelQualityMap[privilege?.plLevel];
+      if (quality) return quality;
+    }
+  }
+
   const order = [
     { key: "jm", type: QualityType.Master },
     { key: "db", type: QualityType.Dolby },

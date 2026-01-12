@@ -10,6 +10,8 @@ import initWindowsIpc from "./ipc-window";
 import initProtocolIpc from "./ipc-protocol";
 import initCacheIpc from "./ipc-cache";
 import initSocketIpc from "./ipc-socket";
+import initMediaIpc from "./ipc-media";
+import initMpvIpc from "./ipc-mpv";
 
 /**
  * 初始化全部 IPC 通信
@@ -28,6 +30,8 @@ const initIpc = (): void => {
   initProtocolIpc();
   initCacheIpc();
   initSocketIpc();
+  initMediaIpc();
+  initMpvIpc();
 };
 
 export default initIpc;

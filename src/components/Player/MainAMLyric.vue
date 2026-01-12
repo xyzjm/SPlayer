@@ -23,6 +23,7 @@
         :hidePassedLines="settingStore.hidePassedLines"
         :wordFadeWidth="settingStore.wordFadeWidth"
         :style="{
+          '--display-count-down-show': settingStore.countDownShow ? 'flex' : 'none',
           '--amll-lp-font-size': settingStore.lyricFontSize + 'px',
           'font-weight': settingStore.lyricFontBold ? 'bold' : 'normal',
           'font-family': settingStore.LyricFont !== 'follow' ? settingStore.LyricFont : '',
@@ -76,7 +77,22 @@ const amLyricsData = computed(() => {
   // 简单检查歌词有效性
   if (!Array.isArray(lyrics) || lyrics.length === 0) return [];
 
-  return cloneDeep(lyrics) as LyricLine[];
+  const clonedLyrics = cloneDeep(lyrics) as LyricLine[];
+
+  // 检查是否要不显示某一部分并删去
+  const showTran = settingStore.showTran;
+  const showRoma = settingStore.showRoma;
+  const showWordsRoma = settingStore.showWordsRoma;
+
+  if (!showTran || !showRoma || !showWordsRoma) {
+    clonedLyrics.forEach((line) => {
+      if (!showTran) line.translatedLyric = "";
+      if (!showRoma) line.romanLyric = "";
+      if (!showWordsRoma) line.words.forEach((word) => (word.romanWord = ""));
+    });
+  }
+
+  return clonedLyrics;
 });
 
 // 进度跳转
@@ -151,6 +167,12 @@ onBeforeUnmount(() => {
     top: 0;
     padding-left: 10px;
     padding-right: 80px;
+
+    div {
+      div[class^="_interludeDots"] {
+        display: var(--display-count-down-show);
+      }
+    }
   }
 
   &.pure {

@@ -20,19 +20,68 @@
         v-else-if="settingStore.playerBackgroundType === 'animation'"
         :album="musicStore.songCover"
         :fps="settingStore.playerBackgroundFps ?? 60"
-        :flowSpeed="settingStore.playerBackgroundFlowSpeed ?? 4"
+        :flowSpeed="flowSpeed"
         :hasLyric="musicStore.isHasLrc"
+        :lowFreqVolume="lowFreqVolume"
+        :renderScale="settingStore.playerBackgroundRenderScale ?? 0.5"
       />
     </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { useMusicStore, useSettingStore } from "@/stores";
+import { useMusicStore, useSettingStore, useStatusStore } from "@/stores";
+import { usePlayerController } from "@/core/player/PlayerController";
 import BackgroundRender from "../Special/BackgroundRender.vue";
 
 const musicStore = useMusicStore();
 const settingStore = useSettingStore();
+const statusStore = useStatusStore();
+const player = usePlayerController();
+
+// 低频音量
+const lowFreqVolume = ref(1.0);
+
+const flowSpeed = computed(() => {
+  if (!statusStore.playStatus && settingStore.playerBackgroundPause) return 0;
+  else return settingStore.playerBackgroundFlowSpeed ?? 4;
+});
+
+// 使用 useRafFn 周期性更新低频音量
+const { pause: pauseRaf, resume: resumeRaf } = useRafFn(
+  () => {
+    if (
+      settingStore.playerBackgroundLowFreqVolume &&
+      settingStore.playerBackgroundType === "animation" &&
+      statusStore.playStatus
+    ) {
+      lowFreqVolume.value = player.getLowFrequencyVolume();
+    }
+  },
+  { immediate: false },
+);
+
+// 根据条件启动或暂停 RAF
+watch(
+  () => [
+    settingStore.playerBackgroundLowFreqVolume,
+    settingStore.playerBackgroundType,
+    statusStore.playStatus,
+  ],
+  ([enabled, bgType, playing]) => {
+    if (enabled && bgType === "animation") {
+      playing ? resumeRaf() : pauseRaf();
+    } else {
+      pauseRaf();
+      lowFreqVolume.value = 1.0;
+    }
+  },
+  { immediate: true },
+);
+
+onBeforeUnmount(() => {
+  pauseRaf();
+});
 </script>
 
 <style lang="scss" scoped>

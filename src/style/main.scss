@@ -17,6 +17,7 @@ body {
   overflow: hidden;
 }
 
+a,
 img,
 video,
 audio {
@@ -105,6 +106,10 @@ audio {
     box-shadow: 0 0 0 -4px rgba(var(--main-cover-color), 0.24);
     backdrop-filter: blur(10px);
   }
+}
+
+.n-popselect-menu {
+  --n-border-radius: 8px !important;
 }
 
 // n-message

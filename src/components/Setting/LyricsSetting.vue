@@ -9,17 +9,23 @@
           'align-items': settingStore.lyricsPosition,
           '--font-weight': settingStore.lyricFontBold ? 'bold' : 'normal',
           '--font-size': settingStore.lyricFontSize,
-          '--font-tran-size': settingStore.lyricTranFontSize,
-          '--font-roma-size': settingStore.lyricRomaFontSize,
+          '--font-tran-size': tranFontSize,
+          '--font-roma-size': romaFontSize,
           '--transform-origin':
             settingStore.lyricsPosition === 'center'
               ? 'center'
               : settingStore.lyricsPosition === 'flex-start'
                 ? 'left'
                 : 'right',
+          '--font-family': settingStore.LyricFont !== 'follow' ? settingStore.LyricFont : '',
         }"
         class="set-item"
       >
+        <n-card class="warning" v-if="settingStore.useAMLyrics">
+          <n-text>
+            正在使用 Apple Music-like Lyrics，实际显示效果可能与此处的预览有较大差别
+          </n-text>
+        </n-card>
         <div v-for="item in 2" :key="item" :class="['lrc-item', { on: item === 2 }]">
           <n-text>我是一句歌词</n-text>
           <n-text v-if="settingStore.showTran">I'm the lyric</n-text>
@@ -73,12 +79,13 @@
             </n-button>
           </Transition>
           <n-input-number
-            v-model:value="settingStore.lyricTranFontSize"
+            v-model:value="tranFontSize"
             :min="5"
             :max="40"
             :disabled="settingStore.useAMLyrics"
             class="set"
             placeholder="请输入翻译歌词字体大小"
+            :title="tranFontSizeTitle"
             @blur="
               settingStore.lyricTranFontSize === null ? (settingStore.lyricTranFontSize = 22) : null
             "
@@ -105,12 +112,13 @@
             </n-button>
           </Transition>
           <n-input-number
-            v-model:value="settingStore.lyricRomaFontSize"
+            v-model:value="romaFontSize"
             :min="5"
             :max="40"
             :disabled="settingStore.useAMLyrics"
             class="set"
             placeholder="请输入歌词字体大小"
+            :title="tranFontSizeTitle"
             @blur="
               settingStore.lyricRomaFontSize === null ? (settingStore.lyricRomaFontSize = 18) : null
             "
@@ -197,6 +205,26 @@
         <n-switch v-model:value="settingStore.showYrc" class="set" :round="false" />
       </n-card>
       <n-collapse-transition :show="settingStore.showYrc">
+        <n-card v-if="isElectron" class="set-item">
+          <div class="label">
+            <n-text class="name">优先使用 QM 歌词</n-text>
+            <n-text class="tip" :depth="3"> 优先从 QM 获取逐字歌词，模糊搜索，可能不准确 </n-text>
+          </div>
+          <n-switch v-model:value="settingStore.preferQQMusicLyric" class="set" :round="false" />
+        </n-card>
+        <n-card v-if="isElectron" class="set-item">
+          <div class="label">
+            <n-text class="name">本地歌曲使用 QM 歌词</n-text>
+            <n-text class="tip" :depth="3">
+              为本地歌曲从 QM 匹配逐字歌词，如已有 TTML 歌词则跳过
+            </n-text>
+          </div>
+          <n-switch
+            v-model:value="settingStore.localLyricQQMusicMatch"
+            class="set"
+            :round="false"
+          />
+        </n-card>
         <n-card class="set-item">
           <div class="label">
             <n-text class="name">显示逐字歌词动画</n-text>
@@ -218,7 +246,6 @@
           v-model:value="settingStore.showTran"
           class="set"
           :round="false"
-          :disabled="settingStore.useAMLyrics"
         />
       </n-card>
       <n-card class="set-item">
@@ -229,7 +256,6 @@
           v-model:value="settingStore.showRoma"
           class="set"
           :round="false"
-          :disabled="settingStore.useAMLyrics"
         />
       </n-card>
       <n-card class="set-item">
@@ -285,9 +311,9 @@
             歌词支持逐字、翻译、音译等功能，将会在下一首歌生效
           </n-text>
         </div>
-        <n-switch v-model:value="settingStore.enableTTMLLyric" class="set" :round="false" />
+        <n-switch v-model:value="settingStore.enableOnlineTTMLLyric" class="set" :round="false" />
       </n-card>
-      <n-collapse-transition :show="settingStore.enableTTMLLyric">
+      <n-collapse-transition :show="settingStore.enableOnlineTTMLLyric">
         <n-card class="set-item">
           <div class="label">
             <n-text class="name">AMLL TTML DB 地址</n-text>
@@ -318,7 +344,7 @@
           </div>
           <n-switch v-model:value="settingStore.enableExcludeTTML" class="set" :round="false" />
         </n-card>
-        <n-card class="set-item">
+        <n-card v-if="isElectron" class="set-item">
           <div class="label">
             <n-text class="name">本地歌词排除</n-text>
             <n-text class="tip" :depth="3">
@@ -388,6 +414,16 @@
             :min="0.01"
             :max="1"
             :step="0.01"
+            :round="false"
+          />
+        </n-card>
+        <n-card class="set-item">
+          <div class="label">
+            <n-text class="name">显示逐字音译</n-text>
+          </div>
+          <n-switch
+            v-model:value="settingStore.showWordsRoma"
+            class="set"
             :round="false"
           />
         </n-card>
@@ -469,31 +505,7 @@
           <n-text class="name">歌词字体</n-text>
           <n-text class="tip" :depth="3"> 更改桌面歌词字体 </n-text>
         </div>
-        <n-flex>
-          <Transition name="fade" mode="out-in">
-            <n-button
-              v-if="desktopLyricConfig.fontFamily !== 'system-ui'"
-              type="primary"
-              strong
-              secondary
-              @click="
-                () => {
-                  desktopLyricConfig.fontFamily = 'system-ui';
-                  saveDesktopLyricConfig();
-                }
-              "
-            >
-              恢复默认
-            </n-button>
-          </Transition>
-          <n-select
-            v-model:value="desktopLyricConfig.fontFamily"
-            :options="allFontsData"
-            class="set"
-            filterable
-            @update:value="saveDesktopLyricConfig"
-          />
-        </n-flex>
+        <n-button type="primary" strong secondary @click="openFontManager">配置</n-button>
       </n-card>
       <n-card class="set-item">
         <div class="label">
@@ -631,7 +643,6 @@ import { isElectron } from "@/utils/env";
 import { openLyricExclude, openAMLLServer, openFontManager } from "@/utils/modal";
 import { LyricConfig } from "@/types/desktop-lyric";
 import { usePlayerController } from "@/core/player/PlayerController";
-import { SelectOption } from "naive-ui";
 import defaultDesktopLyricConfig from "@/assets/data/lyricConfig";
 
 const props = defineProps<{ scrollTo?: string }>();
@@ -643,8 +654,30 @@ const settingStore = useSettingStore();
 // 桌面歌词区域引用
 const desktopLyricRef = ref<HTMLElement | null>(null);
 
-// 全部字体
-const allFontsData = ref<SelectOption[]>([]);
+/**
+ * 创建响应式字体大小计算属性
+ * 当启用 AMLL 时，翻译和音译的字体大小会根据主歌词大小自动调整
+ */
+const fontSizeComputed = (key: string) =>
+  computed({
+    get: () =>
+      settingStore.useAMLyrics
+        ? // AMLL 会为翻译和音译设置 `font-size: max(.5em, 10px);`
+          Math.max(0.5 * settingStore.lyricFontSize, 10)
+        : settingStore[key],
+    set: (value) => (settingStore[key] = value),
+  });
+
+// 真实显示的翻译歌词字体大小
+const tranFontSize = fontSizeComputed("lyricTranFontSize");
+
+// 真实显示的音译歌词字体大小
+const romaFontSize = fontSizeComputed("lyricRomaFontSize");
+
+// 显示翻译和音译歌词字体大小被禁用的原因
+const tranFontSizeTitle = computed(() =>
+  settingStore.useAMLyrics ? "翻译和音译歌词大小由 Apple Music-like Lyrics 自动设置" : "",
+);
 
 // 桌面歌词配置
 const desktopLyricConfig = reactive<LyricConfig>({ ...defaultDesktopLyricConfig });
@@ -734,6 +767,8 @@ onMounted(async () => {
       transform: scale(1);
     }
     .n-text {
+      font-family: var(--font-family);
+
       &:nth-of-type(1) {
         font-weight: var(--font-weight);
         font-size: calc(var(--font-size) * 1px);
@@ -747,6 +782,12 @@ onMounted(async () => {
         font-size: calc(var(--font-roma-size) * 1px);
       }
     }
+  }
+  .warning {
+    border-radius: 8px;
+    font-size: 16px;
+    background-color: rgba(255, 255, 255, 0.1);
+    margin-bottom: 4px;
   }
 }
 </style>
