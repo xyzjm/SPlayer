@@ -1,4 +1,4 @@
-import { songLevelData, sortOptions } from "@/utils/meta";
+import { songLevelData } from "@/utils/meta";
 
 export type MetaData = {
   id: number;
@@ -9,6 +9,8 @@ export type MetaData = {
 
 export type DjData = {
   id: number;
+  /** 所属电台 ID */
+  radioId?: number;
   name: string;
   creator?: string;
 };
@@ -41,6 +43,9 @@ export enum QualityType {
   /** 低质量 */
   LQ = "LQ", // l: 128kbps
 }
+
+/** 音频源类型 */
+export type AudioSourceType = "official" | "netease" | "kuwo" | "bodian" | "local" | "streaming";
 
 export type UserType = {
   id: number;
@@ -88,6 +93,8 @@ export type SongType = {
   pc?: boolean;
   /** 大小 */
   size?: number;
+  /** 曲目序号 */
+  trackNumber?: number;
   /** 音质 */
   quality?: QualityType;
   /** 创建时间 */
@@ -98,19 +105,35 @@ export type SongType = {
   playCount?: number;
   /**
    * 歌曲类型
-   * song: 歌曲 | radio: 电台
+   * song: 歌曲 | radio: 电台 | streaming: 流媒体
    */
-  type: "song" | "radio";
-  /**
-   * 是否为心动模式插入的歌曲，
-   * 用于在退出心动模式时清理这些歌曲
-   */
-  isRecommendation?: boolean;
+  type: "song" | "radio" | "streaming";
+  /** 流媒体播放 URL */
+  streamUrl?: string;
+  /** 原始 ID（流媒体服务器的 ID） */
+  originalId?: string;
+  /** 流媒体服务器类型 */
+  serverType?: "navidrome" | "jellyfin" | "subsonic" | "opensubsonic" | "emby";
+  /** 流媒体服务器 ID */
+  serverId?: string;
+  /** 来源标记 */
+  source?: "streaming";
+  /** 标记 */
+  mark?: number;
+  /** ReplayGain 信息 */
+  replayGain?: ReplayGainType;
 };
+
+export interface ReplayGainType {
+  trackGain?: number;
+  trackPeak?: number;
+  albumGain?: number;
+  albumPeak?: number;
+}
 
 // Cover
 export type CoverType = {
-  id: number;
+  id: number | string;
   name: string;
   cover: string;
   coverSize?: CoverSize;
@@ -275,7 +298,19 @@ export interface UserLikeDataType {
 }
 
 // sort
-export type SortType = keyof typeof sortOptions;
+export type SortField =
+  | "default"
+  | "title"
+  | "artist"
+  | "album"
+  | "trackNumber"
+  | "filename"
+  | "duration"
+  | "size"
+  | "createTime"
+  | "updateTime";
+
+export type SortOrder = "default" | "asc" | "desc";
 
 /** 歌曲元素音质类型 */
 export type SongLevelType = keyof typeof songLevelData;
@@ -292,12 +327,12 @@ export type SongLevelDataType = {
 // setting
 export type SettingType =
   | "general"
+  | "appearance"
   | "play"
   | "lyrics"
   | "keyboard"
   | "local"
-  | "third"
-  | "other"
+  | "network"
   | "about";
 
 // UpdateLog
@@ -332,3 +367,13 @@ export interface UpdateInfoType {
 
 // 登录方式
 export type LoginType = "qr" | "phone" | "cookie" | "uid";
+
+// 账号信息
+export interface AccountType {
+  userId: number;
+  name: string;
+  avatarUrl: string;
+  cookies: Record<string, string>;
+  loginType: LoginType;
+  lastLoginTime: number;
+}

@@ -1,12 +1,12 @@
-import { SongUnlockServer } from "@/core/player/SongManager";
-import type { SettingState } from "../setting";
-import { defaultAMLLDbServer } from "@/utils/meta";
 import { keywords, regexes } from "@/assets/data/exclude";
+import { SongUnlockServer } from "@/core/player/SongManager";
+import { defaultAMLLDbServer } from "@/utils/meta";
+import type { SettingState } from "../setting";
 
 /**
  * 当前设置 Schema 版本号
  */
-export const CURRENT_SETTING_SCHEMA_VERSION = 6;
+export const CURRENT_SETTING_SCHEMA_VERSION = 12;
 
 /**
  * 迁移函数类型
@@ -31,7 +31,6 @@ export const settingMigrations: Record<number, MigrationFunction> = {
     return {
       songUnlockServer: [
         { key: SongUnlockServer.BODIAN, enabled: true },
-        { key: SongUnlockServer.GEQUBAO, enabled: true },
         { key: SongUnlockServer.NETEASE, enabled: true },
         { key: SongUnlockServer.KUWO, enabled: false },
       ],
@@ -73,9 +72,10 @@ export const settingMigrations: Record<number, MigrationFunction> = {
     }
 
     return {
+      // 这些字段在 Schema Version 8 时被重命名，导致类型检查报错
       excludeUserKeywords: userKeywords,
       excludeUserRegexes: userRegexes,
-    };
+    } as Partial<SettingState>;
   },
   6: (state) => {
     interface OldSettingState extends Partial<SettingState> {
@@ -111,7 +111,91 @@ export const settingMigrations: Record<number, MigrationFunction> = {
         hideLikedPlaylists: oldState.hideLikedPlaylists || false,
         hideHeartbeatMode: oldState.hideHeartbeatMode || false,
       },
+    };
+  },
+  7: (state) => {
+    interface OldSettingState extends Omit<Partial<SettingState>, "discordRpc"> {
+      discordRpc?: {
+        enabled: boolean;
+        showWhenPaused: boolean;
+        displayMode: string;
+      };
     }
+
+    const oldState = state as OldSettingState;
+    const oldRpc = oldState.discordRpc;
+
+    if (!oldRpc || !oldRpc.displayMode) {
+      return {};
+    }
+
+    const modeMap: Record<string, "Name" | "State" | "Details"> = {
+      name: "Name",
+      state: "State",
+      details: "Details",
+    };
+
+    const currentMode = oldRpc.displayMode;
+
+    if (Object.hasOwn(modeMap, currentMode)) {
+      return {
+        discordRpc: {
+          enabled: oldRpc.enabled,
+          showWhenPaused: oldRpc.showWhenPaused,
+          displayMode: modeMap[currentMode],
+        },
+      };
+    }
+
+    return {};
+  },
+  8: (state) => {
+    interface OldSettingState extends Partial<SettingState> {
+      enableExcludeTTML?: boolean;
+      enableExcludeLocalLyrics?: boolean;
+      excludeUserKeywords?: string[];
+      excludeUserRegexes?: string[];
+    }
+
+    const oldState = state as OldSettingState;
+
+    return {
+      enableExcludeLyricsTTML: oldState.enableExcludeTTML,
+      enableExcludeLyricsLocal: oldState.enableExcludeLocalLyrics,
+      excludeLyricsUserKeywords: oldState.excludeUserKeywords,
+      excludeLyricsUserRegexes: oldState.excludeUserRegexes,
+    };
+  },
+  9: (state) => {
+    interface OldSettingState extends Partial<SettingState> {
+      preferQQMusicLyric?: boolean;
+    }
+    const oldState = state as OldSettingState;
+    const preferQM = oldState.preferQQMusicLyric ?? false;
+
+    return {
+      enableQQMusicLyric: preferQM,
+      lyricPriority: preferQM ? "qm" : "auto",
+    };
+  },
+  10: (state) => {
+    interface OldSettingState extends Partial<SettingState> {
+      clearSearchOnBlur?: boolean;
+    }
+    const oldState = state as OldSettingState;
+    return oldState.clearSearchOnBlur === true ? { searchInputBehavior: "clear" } : {};
+  },
+  11: () => {
+    return {
+      uncensorMaskedProfanity: false,
+    };
+  },
+  12: (state) => {
+    // 移除已废弃的 gequbao 解锁源，清理老用户持久化设置中残留的条目
+    const servers = state.songUnlockServer;
+    if (!Array.isArray(servers)) return {};
+    return {
+      songUnlockServer: servers.filter((s) => (s.key as string) !== "gequbao"),
+    };
   },
 };
-

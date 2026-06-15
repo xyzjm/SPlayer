@@ -6,7 +6,7 @@
 
 ### 客户端下载
 
-前往 [GitHub Releases](https://github.com/imsyy/SPlayer/releases) 下载对应系统的安装包：
+前往 [GitHub Releases](https://github.com/SPlayer-Dev/SPlayer/releases) 下载对应系统的安装包：
 
 | 系统    | 安装包格式                        |
 | ------- | --------------------------------- |
@@ -48,7 +48,7 @@ docker run -d --name SPlayer -p 25884:25884 imsyy/splayer:latest
 
 ### Vercel 部署
 
-1. 先部署 [NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi) 并获取 API 地址
+1. 先部署 [NeteaseCloudMusicApi](https://github.com/neteasecloudmusicapienhanced/api-enhanced) 并获取 API 地址
 2. Fork 本仓库到你的 GitHub 账号
 3. 复制 `/.env.example` 为 `/.env` 并配置：
    ```
@@ -133,7 +133,7 @@ cargo --version
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/imsyy/SPlayer.git
+git clone https://github.com/SPlayer-Dev/SPlayer.git
 cd SPlayer
 
 # 2. 安装依赖
@@ -143,7 +143,7 @@ pnpm install
 cp .env.example .env
 # 编辑 .env 文件，配置 API 地址
 
-# 4. 构建原生模块 (Windows)
+# 4. 构建原生模块
 pnpm build:native
 
 # 5. 启动开发服务器

@@ -10,13 +10,13 @@
       <div :style="{ height: `${totalHeight}px`, position: 'relative' }">
         <!-- 可见项目容器 -->
         <div
+          ref="contentRef"
           :style="{
             position: 'absolute',
             top: 0,
             left: 0,
             right: 0,
-            transform: `translateY(${offsetY}px)`,
-            willChange: 'transform',
+            // transform: `translateY(${offsetY}px)`,
           }"
         >
           <div
@@ -25,6 +25,14 @@
             ref="itemRefs"
             class="virtual-item"
             :data-index="actualStartIndex + index"
+            :style="{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              transform: `translateY(${getItemTop(actualStartIndex + index)}px)`,
+              transition: 'transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)',
+            }"
           >
             <slot :item="item" :index="actualStartIndex + index" />
           </div>
@@ -35,8 +43,7 @@
 </template>
 
 <script setup lang="ts">
-import { NScrollbar } from "naive-ui";
-import { useElementSize } from "@vueuse/core";
+import type { NScrollbar } from "naive-ui";
 
 interface Props {
   /** 列表项数据 */
@@ -73,6 +80,7 @@ const emit = defineEmits<{
 
 const wrapperRef = ref<HTMLElement | null>(null);
 const scrollbarRef = ref<InstanceType<typeof NScrollbar> | null>(null);
+const contentRef = ref<HTMLElement | null>(null);
 
 // 测量外层容器高度
 const { height: containerHeight } = useElementSize(wrapperRef);
@@ -118,15 +126,21 @@ const initializeHeights = () => {
 };
 
 // 更新累积高度
-const updateTops = () => {
+const updateTops = (fromIndex = 0) => {
   if (props.itemFixed) return;
 
-  itemTops.value = [];
-  let top = 0;
-  for (let i = 0; i < itemHeights.value.length; i++) {
-    itemTops.value[i] = top;
-    top += itemHeights.value[i];
+  const heights = itemHeights.value;
+  const tops =
+    itemTops.value.length === heights.length ? itemTops.value : new Array(heights.length);
+
+  // 从变更位置开始计算
+  let top = fromIndex > 0 ? tops[fromIndex - 1] + heights[fromIndex - 1] : 0;
+  for (let i = fromIndex; i < heights.length; i++) {
+    tops[i] = top;
+    top += heights[i];
   }
+
+  itemTops.value = tops;
 };
 
 // 列表总高度
@@ -159,33 +173,38 @@ const calculateVisibleRange = (currentScrollTop: number) => {
     const visibleCount = Math.ceil(vHeight / props.itemHeight);
     endIndex = startIndex + visibleCount;
   } else {
-    // 动态高度模式
-    let start = 0;
-    let end = itemTops.value.length - 1;
+    // 动态高度模式 - 使用二分查找优化
+    const tops = itemTops.value;
+    const heights = itemHeights.value;
+    const len = tops.length;
 
-    while (start <= end) {
-      const mid = Math.floor((start + end) / 2);
-      const top = itemTops.value[mid];
-      const bottom = top + itemHeights.value[mid];
-
+    // 二分查找起始索引
+    let lo = 0;
+    let hi = len - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      const bottom = tops[mid] + heights[mid];
       if (bottom > currentScrollTop) {
         startIndex = mid;
-        end = mid - 1;
+        hi = mid - 1;
       } else {
-        start = mid + 1;
+        lo = mid + 1;
       }
     }
 
-    // 查找结束索引
+    // 二分查找结束索引
     const viewportBottom = currentScrollTop + vHeight;
+    lo = startIndex;
+    hi = len - 1;
     endIndex = startIndex;
-
-    // 从 startIndex 开始向后查找
-    for (let i = startIndex; i < itemTops.value.length; i++) {
-      if (itemTops.value[i] > viewportBottom) {
-        break;
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      if (tops[mid] <= viewportBottom) {
+        endIndex = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
       }
-      endIndex = i;
     }
   }
 
@@ -199,6 +218,45 @@ const calculateVisibleRange = (currentScrollTop: number) => {
   }
 };
 
+/**
+ * 通过 Y 轴绝对偏移量，计算出悬停的列表索引及处于该项的上半区还是下半区
+ */
+const getDropInfoByOffset = (offsetY: number) => {
+  const len = props.items.length;
+  if (len === 0) return { index: 0, position: "top" };
+
+  if (props.itemFixed) {
+    const index = Math.floor(offsetY / props.itemHeight);
+    const remainder = offsetY % props.itemHeight;
+    const position = remainder < props.itemHeight / 2 ? "top" : "bottom";
+    return { index: Math.max(0, Math.min(index, len - 1)), position };
+  }
+
+  const tops = itemTops.value;
+  const heights = itemHeights.value;
+
+  if (offsetY <= 0) return { index: 0, position: "top" };
+  if (offsetY >= tops[len - 1] + heights[len - 1]) return { index: len - 1, position: "bottom" };
+
+  let low = 0;
+  let high = len - 1;
+  while (low <= high) {
+    const mid = (low + high) >>> 1;
+    const top = tops[mid];
+    const bottom = top + heights[mid];
+
+    if (offsetY >= top && offsetY < bottom) {
+      const position = offsetY - top < heights[mid] / 2 ? "top" : "bottom";
+      return { index: mid, position };
+    } else if (offsetY < top) {
+      high = mid - 1;
+    } else {
+      low = mid + 1;
+    }
+  }
+  return { index: len - 1, position: "bottom" };
+};
+
 // 可见项
 const visibleItems = computed(() => {
   if (actualStartIndex.value > actualEndIndex.value) return [];
@@ -206,14 +264,14 @@ const visibleItems = computed(() => {
 });
 
 // Y 轴偏移量
-const offsetY = computed(() => {
-  if (actualStartIndex.value === 0) return 0;
-  if (props.itemFixed) {
-    return actualStartIndex.value * props.itemHeight;
-  }
-  if (itemTops.value.length === 0) return 0;
-  return itemTops.value[actualStartIndex.value];
-});
+// const offsetY = computed(() => {
+//   if (actualStartIndex.value === 0) return 0;
+//   if (props.itemFixed) {
+//     return actualStartIndex.value * props.itemHeight;
+//   }
+//   if (itemTops.value.length === 0) return 0;
+//   return Math.round(itemTops.value[actualStartIndex.value]);
+// });
 
 // 测量项目高度
 const measureItemHeights = () => {
@@ -246,8 +304,25 @@ const measureItemHeights = () => {
   }
 };
 
+let rafId: number | null = null;
+let pendingScrollTarget: HTMLElement | null = null;
+
+const processScroll = () => {
+  rafId = null;
+  const target = pendingScrollTarget;
+  if (!target) return;
+
+  const { scrollTop: st, scrollHeight, clientHeight } = target;
+  scrollTop.value = st;
+  calculateVisibleRange(st);
+
+  // 触底检测
+  if (scrollHeight - st - clientHeight < 50) {
+    emit("reachBottom");
+  }
+};
+
 // 处理滚动事件
-let ticking = false;
 const handleScroll = (event: Event) => {
   const target = event.target as HTMLElement;
   if (!target) return;
@@ -255,19 +330,10 @@ const handleScroll = (event: Event) => {
   // 触发外部事件
   emit("scroll", event);
 
-  if (!ticking) {
-    requestAnimationFrame(() => {
-      const { scrollTop: st, scrollHeight, clientHeight } = target;
-      scrollTop.value = st;
-      calculateVisibleRange(st);
-
-      // 触底检测
-      if (scrollHeight - st - clientHeight < 50) {
-        emit("reachBottom");
-      }
-      ticking = false;
-    });
-    ticking = true;
+  // 合并多次滚动到一个 rAF
+  pendingScrollTarget = target;
+  if (rafId === null) {
+    rafId = requestAnimationFrame(processScroll);
   }
 };
 
@@ -305,12 +371,27 @@ const getScrollTop = () => {
   return scrollTop.value;
 };
 
+const getItemTop = (index: number) => {
+  if (props.itemFixed) {
+    return index * props.itemHeight;
+  }
+  return itemTops.value[index] || 0;
+};
+
 // 暴露方法给父组件
 defineExpose({
+  wrapperRef,
   scrollTo: scrollToPosition,
   scrollToIndex,
   getScrollTop,
+  getItemTop,
+  getDropInfoByOffset,
+  contentRef,
+  actualStartIndex,
 });
+
+// 防抖高度测量
+const debouncedMeasure = useDebounceFn(measureItemHeights, 50);
 
 // 监听数据变化
 watch(
@@ -319,7 +400,7 @@ watch(
     initializeHeights();
     calculateVisibleRange(scrollTop.value);
     // 重新测量高度
-    nextTick(measureItemHeights);
+    nextTick(debouncedMeasure);
   },
   { deep: false },
 );
@@ -343,13 +424,12 @@ watch(
   () => [actualStartIndex.value, actualEndIndex.value],
   () => {
     if (!props.itemFixed) {
-      nextTick(measureItemHeights);
+      nextTick(debouncedMeasure);
     }
   },
   { flush: "post" },
 );
 
-// 组件挂载后初始化
 onMounted(() => {
   initializeHeights();
   // 等待 DOM 渲染和容器尺寸确定
@@ -361,6 +441,13 @@ onMounted(() => {
     // 初始测量
     if (!props.itemFixed) measureItemHeights();
   });
+});
+
+onUnmounted(() => {
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
 });
 </script>
 

@@ -3,6 +3,7 @@ import { app } from "electron";
 import { connect } from "net";
 import { join } from "path";
 import { existsSync, unlinkSync } from "fs";
+import { fileURLToPath } from "url";
 import { processLog } from "../logger";
 import mainWindow from "../windows/main-window";
 
@@ -15,6 +16,7 @@ export class MpvService {
   private commandQueue: string[] = [];
   private observationMap: Map<number, string> = new Map();
   private currentAudioDevice: string = "auto";
+  private pendingInitialVolume: number | null = null;
 
   private playNonce = 0;
   private mpvProcessNonce: number | null = null;
@@ -67,6 +69,8 @@ export class MpvService {
       "--demuxer-max-bytes=120MiB", // 增大缓存容量
       "--demuxer-readahead-secs=120", // 增加预读时间
       `--audio-device=${this.currentAudioDevice}`, // 使用当前设置的音频设备
+      "--audio-channels=auto", // 自动检测音频通道
+      "--demuxer-lavf-o=fflags=+discardcorrupt", // 容错处理，忽略损坏的数据
     ];
 
     // 关闭自动播放时，用启动参数强制暂停，避免启动后短暂自动播放
@@ -82,12 +86,21 @@ export class MpvService {
     //processLog.info("正在启动 MPV 进程...", args);
 
     try {
-      this.mpvProcess = spawn("mpv", args, { stdio: "ignore" });
+      this.mpvProcess = spawn("mpv", args, { stdio: ["ignore", "pipe", "pipe"] });
       // 将当前进程与本次播放请求关联，便于区分旧进程退出与新进程生命周期
       this.mpvProcessNonce = this.playNonce;
 
-      this.mpvProcess.on("exit", () => {
-        //processLog.warn(`MPV 进程已退出`);
+      // 捕获 stdout 和 stderr 用于调试
+      this.mpvProcess.stdout?.on("data", (data) => {
+        processLog.info("MPV stdout:", data.toString());
+      });
+
+      this.mpvProcess.stderr?.on("data", (data) => {
+        processLog.error("MPV stderr:", data.toString());
+      });
+
+      this.mpvProcess.on("exit", (code, signal) => {
+        processLog.warn(`MPV 进程已退出，退出码: ${code}, 信号: ${signal}`);
         this.mpvProcess = null;
         this.isConnected = false;
         this.client = null;
@@ -117,7 +130,7 @@ export class MpvService {
 
       // 连接成功后再加载文件，确保能收到 file-loaded/playback-restart
       if (url) {
-        this.sendCommand("loadfile", [url, "replace"]);
+        this.sendCommand("loadfile", [this.normalizeMpvLoadTarget(url), "replace"]);
       }
     } catch (error) {
       processLog.error("启动 MPV 失败:", error);
@@ -137,6 +150,7 @@ export class MpvService {
             this.isConnected = true;
             this.setupEventListeners();
             this.flushQueue();
+            this.applyPendingVolume();
             resolve();
           });
 
@@ -145,7 +159,7 @@ export class MpvService {
           });
         });
         return;
-      } catch (e) {
+      } catch {
         await new Promise((r) => setTimeout(r, 500));
       }
     }
@@ -192,6 +206,14 @@ export class MpvService {
     this.observeProperty(3, "volume");
     this.observeProperty(4, "metadata");
     this.observeProperty(5, "duration");
+  }
+
+  private applyPendingVolume() {
+    if (!this.isConnected || !this.client) return;
+    if (this.pendingInitialVolume != null) {
+      const volume = this.pendingInitialVolume;
+      this.sendCommand("set_property", ["volume", volume]);
+    }
   }
 
   private handleMpvEvent(event: any) {
@@ -397,6 +419,21 @@ export class MpvService {
   }
 
   public setVolume(volume: number) {
+    // 记录待应用的初始音量
+    this.pendingInitialVolume = volume;
+
+    // 尚未建立连接
+    if (!this.isConnected || !this.client) {
+      if (this.mpvProcess) {
+        // 进程已启动但仍在连接中，交给 sendCommand 入队
+        this.sendCommand("set_property", ["volume", volume]);
+      } else {
+        // 进程未启动，记录日志
+        processLog.info(`记录待应用的 MPV 初始音量: ${volume}`);
+      }
+      return;
+    }
+
     this.sendCommand("set_property", ["volume", volume]);
   }
 
@@ -440,5 +477,41 @@ export class MpvService {
     this.observationMap.clear();
     this.mpvProcessNonce = null;
     this.pendingFileLoaded = null;
+  }
+
+  private normalizeMpvLoadTarget(url?: string) {
+    if (!url) return "";
+    if (!url.startsWith("file://")) {
+      return this.normalizeLocalPath(url);
+    }
+
+    try {
+      const parsedUrl = new URL(url);
+      if (parsedUrl.host) {
+        const uncPath = `//${parsedUrl.host}${decodeURIComponent(parsedUrl.pathname)}`;
+        return this.normalizeLocalPath(uncPath);
+      }
+    } catch (e) {
+      processLog.warn(`[MpvService] 使用 'new URL()' 解析 URL 失败，将执行回退逻辑: ${url}`, e);
+      // 忽略 URL 解析失败，继续走兜底逻辑
+    }
+
+    try {
+      return this.normalizeLocalPath(fileURLToPath(url));
+    } catch {
+      const rawPath = decodeURIComponent(url.slice("file://".length));
+      return this.normalizeLocalPath(rawPath);
+    }
+  }
+
+  private normalizeLocalPath(filePath: string) {
+    if (process.platform !== "win32") return filePath;
+    if (filePath.startsWith("//")) {
+      return filePath.replace(/\//g, "\\");
+    }
+    if (/^[A-Za-z]:\//.test(filePath)) {
+      return filePath.replace(/\//g, "\\");
+    }
+    return filePath;
   }
 }
